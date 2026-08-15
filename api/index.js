@@ -93,22 +93,39 @@ builder.defineStreamHandler(async (args) => {
       const [imdbId, season, episode] = id.split(':');
       let cleanImdbId = imdbId.replace('tt', '');
       let realImdbId = imdbId;
+      let seriesName = '';
 
-      // Ensure we have a real IMDB ID for Torrentio (in case it's a fake TMDB ID from our catalog)
+      // Ensure we have a real IMDB ID for Torrentio, and get the Title for Nyaa
       try {
-        const tmdbFind = await axios.get(`https://api.themoviedb.org/3/tv/${cleanImdbId}/external_ids?api_key=${TMDB_API_KEY}`);
-        if (tmdbFind.data.imdb_id) {
-          realImdbId = tmdbFind.data.imdb_id;
+        const tmdbFindId = await axios.get(`https://api.themoviedb.org/3/tv/${cleanImdbId}/external_ids?api_key=${TMDB_API_KEY}`);
+        if (tmdbFindId.data.imdb_id) {
+          realImdbId = tmdbFindId.data.imdb_id;
           cleanImdbId = realImdbId.replace('tt', '');
+        }
+        
+        // Fetch series name from TMDB to use for Nyaa search
+        const tmdbFindTitle = await axios.get(`https://api.themoviedb.org/3/find/${realImdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`);
+        if (tmdbFindTitle.data.tv_results && tmdbFindTitle.data.tv_results.length > 0) {
+          seriesName = tmdbFindTitle.data.tv_results[0].name;
         }
       } catch (e) {}
       
-      // Fire BOTH EZTV and Torrentio concurrently to make it 2x faster!
+      // Fire EZTV, Torrentio, and Nyaa concurrently to make it fast!
       const eztvPromise = axios.get(`https://eztvx.to/api/get-torrents?imdb_id=${cleanImdbId}`).catch(() => null);
       const torrentioPromise = axios.get(`https://torrentio.strem.fun/stream/series/${realImdbId}:${season}:${episode}.json`).catch(() => null);
       
-      const [eztvRes, torrentioRes] = await Promise.all([eztvPromise, torrentioPromise]);
+      let nyaaPromise = Promise.resolve(null);
+      if (seriesName) {
+        // Nyaa typically uses padded episode numbers for anime (e.g. "Initial D 01")
+        const epPad = episode.padStart(2, '0');
+        const query = encodeURIComponent(`${seriesName} ${epPad}`);
+        // Search Nyaa's Anime - English translated category (c=1_2)
+        nyaaPromise = axios.get(`https://nyaa.si/?page=rss&q=${query}&c=1_2&f=0`).catch(() => null);
+      }
       
+      const [eztvRes, torrentioRes, nyaaRes] = await Promise.all([eztvPromise, torrentioPromise, nyaaPromise]);
+      
+      // Process EZTV (Western shows)
       if (eztvRes && eztvRes.data && eztvRes.data.torrents) {
         const exactEpisodes = eztvRes.data.torrents.filter(
           (t) => parseInt(t.season) === parseInt(season) && parseInt(t.episode) === parseInt(episode)
@@ -122,6 +139,34 @@ builder.defineStreamHandler(async (args) => {
         });
       }
 
+      // Process Nyaa (Anime)
+      if (nyaaRes && nyaaRes.data) {
+        const xmlData = nyaaRes.data;
+        const items = [...xmlData.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+        items.forEach(item => {
+          let title = "";
+          const cdataMatch = item[1].match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/);
+          if (cdataMatch) title = cdataMatch[1];
+          else {
+            const titleMatch = item[1].match(/<title>(.*?)<\/title>/);
+            if (titleMatch) title = titleMatch[1];
+          }
+          
+          const infoHash = item[1].match(/<nyaa:infoHash>(.*?)<\/nyaa:infoHash>/)?.[1];
+          const size = item[1].match(/<nyaa:size>(.*?)<\/nyaa:size>/)?.[1] || 'Unknown';
+          const seeders = item[1].match(/<nyaa:seeders>(.*?)<\/nyaa:seeders>/)?.[1] || '0';
+          
+          if (infoHash) {
+            streams.push({
+              name: 'Nyaa.si',
+              title: `${title}\n💾 ${size} | 👥 ${seeders}`,
+              infoHash: infoHash.toLowerCase()
+            });
+          }
+        });
+      }
+
+      // Process Torrentio (Fallback, likely blocked on Render)
       if (streams.length === 0 && torrentioRes && torrentioRes.data && torrentioRes.data.streams) {
         torrentioRes.data.streams.slice(0, 10).forEach(t => {
           if (t.infoHash) {
