@@ -15,8 +15,8 @@ const manifest = {
   types: ['series', 'movie'],
   idPrefixes: ['tt'],
   catalogs: [
-    { type: 'series', id: 'anime_series', name: 'Anime Series', extra: [{ name: 'skip', isRequired: false }] },
-    { type: 'movie', id: 'anime_movies', name: 'Anime Movies', extra: [{ name: 'skip', isRequired: false }] },
+    { type: 'movie', id: 'all_movies', name: 'All Movies', extra: [{ name: 'search', isRequired: false }, { name: 'skip', isRequired: false }] },
+    { type: 'series', id: 'all_anime', name: 'All Anime', extra: [{ name: 'search', isRequired: false }, { name: 'skip', isRequired: false }] },
     { type: 'series', id: 'kdrama_series', name: 'K-Drama Series', extra: [{ name: 'skip', isRequired: false }] },
     { type: 'series', id: 'marvel_series', name: 'Marvel Series', extra: [{ name: 'skip', isRequired: false }] }
   ]
@@ -30,19 +30,28 @@ builder.defineCatalogHandler(async (args) => {
   
   const skip = extra && extra.skip ? parseInt(extra.skip) : 0;
   const page = Math.floor(skip / 20) + 1; 
+  const searchQuery = extra && extra.search ? encodeURIComponent(extra.search) : null;
   
   let endpoint = '';
 
-  if (type === 'series' && id === 'anime_series') {
-    endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`;
-  } else if (type === 'movie' && id === 'anime_movies') {
-    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`;
-  } else if (type === 'series' && id === 'kdrama_series') {
-    endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&with_origin_country=KR&sort_by=popularity.desc&page=${page}`;
-  } else if (type === 'series' && id === 'marvel_series') {
-    endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&with_companies=420&sort_by=popularity.desc&page=${page}`;
+  if (searchQuery) {
+    if (type === 'movie') {
+      endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${searchQuery}&page=${page}`;
+    } else {
+      endpoint = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&query=${searchQuery}&page=${page}`;
+    }
   } else {
-    return { metas: [] };
+    if (id === 'all_movies') {
+      endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&sort_by=popularity.desc&page=${page}`;
+    } else if (id === 'all_anime') {
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&with_genres=16&with_original_language=ja&sort_by=popularity.desc&page=${page}`;
+    } else if (id === 'kdrama_series') {
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&with_origin_country=KR&sort_by=popularity.desc&page=${page}`;
+    } else if (id === 'marvel_series') {
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&with_companies=420&sort_by=popularity.desc&page=${page}`;
+    } else {
+      return { metas: [] };
+    }
   }
 
   try {
