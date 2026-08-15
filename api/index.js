@@ -122,10 +122,21 @@ builder.defineStreamHandler(async (args) => {
         const epPad = episode.padStart(2, '0');
         const query = encodeURIComponent(`${seriesName} ${epPad}`);
         // Search Nyaa's Anime - English translated category (c=1_2)
-        nyaaPromise = axios.get(`https://nyaa.si/?page=rss&q=${query}&c=1_2&f=0`).catch(() => null);
+        nyaaPromise = axios.get(`https://nyaa.si/?page=rss&q=${query}&c=1_2&f=0`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+          }
+        }).catch(() => null);
       }
       
       const [eztvRes, torrentioRes, nyaaRes] = await Promise.all([eztvPromise, torrentioPromise, nyaaPromise]);
+      
+      if (!seriesName) {
+        streams.push({ name: 'DEBUG', title: 'TMDB failed to find seriesName', infoHash: '1111111111111111111111111111111111111111' });
+      } else if (!nyaaRes || !nyaaRes.data) {
+        streams.push({ name: 'DEBUG', title: 'Nyaa blocked the request (No Data)', infoHash: '2222222222222222222222222222222222222222' });
+      }
       
       // Process EZTV (Western shows)
       if (eztvRes && eztvRes.data && eztvRes.data.torrents) {
@@ -166,6 +177,10 @@ builder.defineStreamHandler(async (args) => {
             });
           }
         });
+        
+        if (items.length === 0) {
+           streams.push({ name: 'DEBUG', title: 'Nyaa returned XML but regex found 0 items', infoHash: '3333333333333333333333333333333333333333' });
+        }
       }
 
       // Process Torrentio (Fallback, likely blocked on Render)
