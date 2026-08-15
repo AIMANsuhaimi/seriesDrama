@@ -102,7 +102,9 @@ builder.defineStreamHandler(async (args) => {
           realImdbId = tmdbFindId.data.imdb_id;
           cleanImdbId = realImdbId.replace('tt', '');
         }
+      } catch (e) {}
         
+      try {
         // Fetch series name from TMDB to use for Nyaa search
         const tmdbFindTitle = await axios.get(`https://api.themoviedb.org/3/find/${realImdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`);
         if (tmdbFindTitle.data.tv_results && tmdbFindTitle.data.tv_results.length > 0) {
